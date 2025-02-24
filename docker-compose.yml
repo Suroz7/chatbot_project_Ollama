@@ -1,0 +1,24 @@
+services:
+  ollama:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    command: ["serve"]
+
+  app:
+    build:
+      context: .  # Changed to project root
+      dockerfile: docker/Dockerfile.app  # Path from root
+    ports:
+      - "5000:5000"
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+
+volumes:
+  ollama_data:
