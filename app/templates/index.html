@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chatbot</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+   
 </head>
 <body>
     <div class="container">
@@ -14,6 +15,7 @@
         </header>
         <div id="chat-box"></div>
         <div class="input-area">
+            <button class="clear-button" onclick="clearChat()">Clear Chat</button>
             <input type="text" id="prompt" placeholder="Type your message...">
             <button onclick="sendMessage()">Send</button>
         </div>
@@ -47,42 +49,53 @@
             msgDiv.innerHTML = `<p>${text}</p>`;
             return msgDiv;
         }
-
+     
         async function sendMessage() {
             const promptInput = document.getElementById('prompt');
             const prompt = promptInput.value;
             const chatBox = document.getElementById('chat-box');
 
-            // Create user message bubble
+            // Don't send empty messages
+            if (!prompt.trim()) return;
+
             const userMsg = createMessage('You', prompt);
             chatBox.appendChild(userMsg);
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Save user message to history
+            // Save user message to local storage (for UI persistence only)
             let history = JSON.parse(localStorage.getItem("chatHistory")) || [];
             history.push({ sender: "You", text: prompt });
             localStorage.setItem("chatHistory", JSON.stringify(history));
 
-            // Show loading indicator for AI response
-            const aiMsg = createMessage('AI', 'Typing...');
+            const aiMsg = createMessage('AI', '');
             chatBox.appendChild(aiMsg);
+            
+            try {
+                const eventSource = new EventSource(`/api/chat/stream?prompt=${encodeURIComponent(prompt)}`);
+                let fullResponse = '';
+                
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    if (data.chunk) {
+                        fullResponse += data.chunk;
+                        aiMsg.innerHTML = `<p>${fullResponse}</p>`;
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                };
 
-            // Call API
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
-            });
-            const data = await response.json();
-
-            // Update AI message with the actual response
-            aiMsg.innerHTML = `<p>${data.response || data.error}</p>`;
-            chatBox.scrollTop = chatBox.scrollHeight;
-
-            // Save AI response to history
-            history = JSON.parse(localStorage.getItem("chatHistory")) || [];
-            history.push({ sender: "AI", text: data.response || data.error });
-            localStorage.setItem("chatHistory", JSON.stringify(history));
+                eventSource.onerror = function(error) {
+                    eventSource.close();
+                    // Save AI response to local storage
+                    if (fullResponse) {
+                        history = JSON.parse(localStorage.getItem("chatHistory")) || [];
+                        history.push({ sender: "AI", text: fullResponse });
+                        localStorage.setItem("chatHistory", JSON.stringify(history));
+                    }
+                };
+                
+            } catch (error) {
+                aiMsg.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
 
             promptInput.value = '';
         }
@@ -91,6 +104,19 @@
         document.getElementById('prompt').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
+
+        function clearChat() {
+            fetch('/api/chat/clear', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('chat-box').innerHTML = '';
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
     </script>
 </body>
 </html>
