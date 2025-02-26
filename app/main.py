@@ -1,9 +1,9 @@
 from flask import Flask, request, Response, render_template, stream_with_context, jsonify
 import datetime
-import requests
 import os
 import logging
 import json
+import ollama
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -14,13 +14,13 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-# Ollama API endpoint
-OLLAMA_API = os.environ.get('OLLAMA_API', 'http://localhost:11434')
-logging.info(f"OLLAMA_API set to: {OLLAMA_API}")
+# Ollama configuration
+OLLAMA_MODEL = "deepseek-r1:1.5b"
+logging.info(f"Ollama model set to: {OLLAMA_MODEL}")
 
 # Google Custom Search API credentials
-GOOGLE_API_KEY = "AIzaSyCMRicu4UnrCmn-8rr29GUqpB_NUzf-k3c"  # Replace with your API key
-GOOGLE_CSE_ID = "564c4d8b512164bb9"  # Replace with your Search Engine ID
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', "AIzaSyCMRicu4UnrCmn-8rr29GUqpB_NUzf-k3c")
+GOOGLE_CSE_ID = os.environ.get('GOOGLE_CSE_ID', "564c4d8b512164bb9")
 
 # Global conversation context
 conversation_context = []
@@ -35,7 +35,7 @@ def should_search_web(prompt):
     trigger_words = [
         "news", "current", "latest", "update", "weather", "stocks", "stock price",
         "market", "price of", "what is happening", "recent events", "today's",
-        "who is", "what is", "when did", "where is", "how to", "election", "covid",
+        "who is the current", "what is the current", "when did", "where is", "how to", "election", "covid",
         "pandemic", "score", "release date", "breaking news", "headlines", "trending",
         "now", "forecast", "temperature", "conditions", "finance", "economy", "trade",
         "value of", "what’s new", "this week", "yesterday", "tomorrow", "event",
@@ -49,6 +49,7 @@ def should_search_web(prompt):
 # Perform Google API search
 def web_search(query, num_results=3):
     try:
+        import requests
         url = "https://www.googleapis.com/customsearch/v1"
         params = {
             "key": GOOGLE_API_KEY,
@@ -64,14 +65,14 @@ def web_search(query, num_results=3):
             f"{item.get('title', 'No title')}\n{item.get('snippet', 'No snippet')}"
             for item in search_results.get("items", [])
         ]
-        combined_snippets = "\n\n".join(snippets)[:2000]  # Limit to 2000 chars
+        combined_snippets = "\n\n".join(snippets)[:2000]
         logging.debug(f"Extracted {len(snippets)} snippets: {combined_snippets}")
         return {"combined_snippets": combined_snippets, "search_engine": "Google API"}
     except Exception as e:
         logging.error(f"Google API search failed: {e}")
         return {"error": str(e)}
 
-# Chat streaming endpoint
+# Chat streaming endpoint with Ollama
 @app.route('/api/chat/stream')
 def chat_stream():
     prompt = request.args.get('prompt', '')
@@ -91,45 +92,46 @@ def chat_stream():
             elif "error" in web_data:
                 yield f"data: {json.dumps({'chunk': f'Web search failed: {web_data['error']}\n\n'})}\n\n"
 
-        # History only if explicitly referenced
-        history_triggers = ["earlier", "before", "previous", "last", "history"]
-        conversation_text = "".join(
-            f"Human: {entry['human']}\nAssistant: {entry['assistant']}\n"
+        # Build conversation history as a reference string
+        history_text = "".join(
+            f"{entry['role'].capitalize()}: {entry['content']}\n"
             for entry in conversation_context
-        ) if any(word in prompt.lower() for word in history_triggers) else ""
+        ) if conversation_context else "No prior conversation."
 
-        # Build prompt
-        final_prompt = f"{prompt}{web_info}"
-        full_prompt = (
-            f"You are a helpful AI assistant. who is very good at having an engaging conversation\n\n"
-            f"History (for explicit reference only):\n{conversation_text or '(No history used)'}\n\n"
-             f"Instructions: Do not answer from history   Answer only: '{prompt}'. Use web results if provided.\n\n"
-            f"Current question: {final_prompt}\nAssistant: "
-            
+        # System prompt with history as reference
+        system_prompt = (
+            f"You are a helpful AI assistant who is very good at having an engaging conversation. "
+            f"Below is the conversation history for reference only—DO NOT answer questions from it unless explicitly asked. "
+            f"Focus solely on the current user prompt and answer it directly. Use web results if provided.\n\n"
+            f"Conversation History (reference only):\n{history_text}\n\n"
         )
 
-        payload = {
-            "model": "deepseek-r1:1.5b",
-            "prompt": full_prompt,
-            "stream": True,
-            "context_window": 4096
-        }
+        # Current prompt with web info
+        full_prompt = f"{prompt}{web_info}"
+
+        # Prepare messages—system prompt with history, then current user prompt
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Answer this: {full_prompt}"}
+        ]
 
         try:
-            logging.debug(f"Sending to Ollama: {OLLAMA_API}/api/generate")
-            response = requests.post(f"{OLLAMA_API}/api/generate", json=payload, stream=True)
-            response.raise_for_status()
+            stream = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=messages,
+                stream=True,
+                options={"context_window": 4096}
+            )
             full_response = ""
-            for line in response.iter_lines():
-                if line:
-                    json_response = json.loads(line)
-                    chunk = json_response.get('response', '')
-                    if chunk:
-                        full_response += chunk
-                        yield f"data: {json.dumps({'chunk': chunk, 'web_used': bool(web_data)})}\n\n"
+            for chunk in stream:
+                content = chunk['message']['content']
+                if content:
+                    full_response += content
+                    yield f"data: {json.dumps({'chunk': content, 'web_used': bool(web_data)})}\n\n"
+            
             if full_response:
-                conversation_context.append({'human': prompt, 'assistant': full_response})
-                logging.info(f"Context updated: {len(conversation_context)} entries")
+                conversation_context.append({"role": "user", "content": prompt})
+                conversation_context.append({"role": "assistant", "content": full_response})
             elif not prompt.strip():
                 yield f"data: {json.dumps({'chunk': 'Hey bro, what\'s up?'})}\n\n"
             else:
@@ -141,7 +143,7 @@ def chat_stream():
 
     return Response(stream_with_context(generate(prompt)), mimetype='text/event-stream')
 
-# Clear and download routes remain unchanged...
+# Clear conversation history
 @app.route('/api/chat/clear', methods=['POST'])
 def clear_chat():
     global conversation_context
@@ -153,6 +155,7 @@ def clear_chat():
         "message": f"Cleared {conversation_length} messages, bro!"
     })
 
+# Download chat history
 @app.route('/api/chat/download', methods=['GET'])
 def download_chat():
     global conversation_context
