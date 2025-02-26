@@ -15,7 +15,10 @@
         </header>
         <div id="chat-box"></div>
         <div class="input-area">
-            <button class="clear-button" onclick="clearChat()">Clear Chat</button>
+            <div class="chat-controls">
+                <button onclick="downloadChat()" class="control-button">Download Chat History</button>
+                <button onclick="clearChat()" class="control-button">Clear Chat</button>
+            </div>
             <input type="text" id="prompt" placeholder="Type your message...">
             <button onclick="sendMessage()">Send</button>
         </div>
@@ -23,16 +26,16 @@
 
     <script>
         // Load message history on page load
-        window.onload = function() {
-            const chatBox = document.getElementById('chat-box');
-            const history = JSON.parse(localStorage.getItem("chatHistory")) || [];
-            history.forEach((msg) => {
-                const p = document.createElement('p');
-                p.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}`;
-                p.classList.add('fade');
-                chatBox.appendChild(p);
-            });
-        };
+       // window.onload = function() {
+         //   const chatBox = document.getElementById('chat-box');
+       //     const history = JSON.parse(localStorage.getItem("chatHistory")) || [];
+        //    history.forEach((msg) => {
+        //        const p = document.createElement('p');
+         //       p.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}`;
+        //        p.classList.add('message');
+        //        chatBox.appendChild(p);
+       //     });
+     //   };
 
         // Dark mode toggle logic
         document.getElementById('dark-toggle').addEventListener('click', () => {
@@ -106,6 +109,10 @@
         });
 
         function clearChat() {
+            if (!confirm('Warning: This will permanently delete all conversation history. Are you sure?')) {
+                return;
+            }
+
             fetch('/api/chat/clear', {
                 method: 'POST',
             })
@@ -113,10 +120,31 @@
             .then(data => {
                 if (data.status === 'success') {
                     document.getElementById('chat-box').innerHTML = '';
+                    // Clear localStorage
+                    localStorage.removeItem("chatHistory");
+                    // Show warning message
+                    const warningMsg = createMessage('System', 'All conversation history has been permanently deleted.');
+                    document.getElementById('chat-box').appendChild(warningMsg);
                 }
             })
             .catch(error => console.error('Error:', error));
         }
+        function downloadChat() {
+    fetch('/api/chat/download')
+        .then(response => response.json())
+        .then(data => {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'chat_history.json';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        })
+        .catch(error => console.error('Error downloading chat:', error));
+}
     </script>
 </body>
 </html>
