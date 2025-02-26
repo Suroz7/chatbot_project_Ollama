@@ -1,4 +1,4 @@
-# Generative AI Chatbot with Ollama and Docker
+# Generative AI interactive Chatbot with Ollama and Docker
 
 A simple chatbot project using locally run Ollama models and Docker for API integrations.
 
