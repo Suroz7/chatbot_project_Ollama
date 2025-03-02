@@ -158,7 +158,9 @@ def chat_stream():
             if full_response:
                 conversation_context.append({"role": "user", "content": prompt})
             elif not prompt.strip():
-                yield f"data: {json.dumps({'chunk': 'Wubba lubba dub dub! Alright, Morty, Grandpa\'s here for you! Don\'t get too cozy, though. I\'m not your personal therapist. Now, what\'s your problem? Make it quick!'})}\n\n"
+                # Fixed line: properly handling quotes in f-strings
+                message = "Wubba lubba dub dub! Alright, Morty, Grandpa's here for you! Don't get too cozy, though. I'm not your personal therapist. Now, what's your problem? Make it quick!"
+                yield f"data: {json.dumps({'chunk': message})}\n\n"
             else:
                 logging.warning("No response from API")
                 error_response = "Sorry, I couldn't generate a response. Please try again."
