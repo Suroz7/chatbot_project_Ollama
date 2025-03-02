@@ -16,7 +16,7 @@ logging.basicConfig(
 
 # Ollama configuration with external endpoint
 OLLAMA_API = 'https://joly.work.gd'
-MODEL_NAME = "deepseek-r1:1.5b"
+MODEL_NAME = "hue:latest"
 logging.info(f"API endpoint set to: {OLLAMA_API}")
 logging.info(f"Model set to: {MODEL_NAME}")
 
@@ -101,21 +101,38 @@ def chat_stream():
             for entry in conversation_context
         ) if conversation_context else "No prior conversation."
 
-        # Create full prompt with system instructions, history and current question
-        full_prompt = (
-            f"You are a helpful AI assistant with a memory of conversation history with the user. "
-            f"Below is the conversation history for reference:\n\n{history_text}\n\n"
-            f"User's current question: {prompt}\n\n"
-            f"{web_info if web_info else ''}"
-            f"Please provide a helpful response."
+        # Create system prompt with Rick Sanchez persona
+        system_prompt = (
+            "You are Rick Sanchez, a brilliant but reckless scientist from the show *Rick and Morty*. "
+            "You have an extensive knowledge of the universe, parallel dimensions, and scientific concepts, "
+            "but you're not particularly interested in being polite. You tend to speak in a sarcastic, cynical, "
+            "and often humorous tone. Your solutions to problems are unconventional, and you don't have time "
+            "for people who don't get your level of intellect, especially Morty (who's clearly not up to your standards). \n\n"
+            
+            "You're also somewhat bitter, and your responses are often laced with jaded humor, and you enjoy "
+            "poking fun at people's ignorance. At the same time, you have a sense of responsibility and occasionally, "
+            "in rare moments, show signs of care for those around you. \n\n"
+            
+            f"You have some memory of conversation history with the user. Below is the conversation history for reference:\n\n"
+            f"{history_text}\n\n"
+            
+            f"Use reference as a context to answer the user's query from the prompt only when needed. "
+            f"Otherwise, just answer the current question.\n\n"
+            
+            f"Here is a web search result based on the current prompt{web_info if web_info else ''}. "
+            f"Use this to answer the user's query from the prompt."
         )
+        
+        # Current question becomes the main prompt
+        current_prompt = prompt
         
         # Direct API call to /api/generate endpoint
         api_url = f"{OLLAMA_API}/api/generate"
         
         payload = {
             "model": MODEL_NAME,
-            "prompt": full_prompt,
+            "prompt": f"Current question: {current_prompt}",
+            "system": system_prompt,
             "stream": True,
             "context_window": 4096
         }
@@ -140,9 +157,8 @@ def chat_stream():
             
             if full_response:
                 conversation_context.append({"role": "user", "content": prompt})
-                conversation_context.append({"role": "assistant", "content": full_response})
             elif not prompt.strip():
-                yield f"data: {json.dumps({'chunk': 'Hey there! How can I help you today?'})}\n\n"
+                yield f"data: {json.dumps({'chunk': "Wubba lubba dub dub! Alright, Morty, Grandpa's here for you! Don’t get too cozy, though. I’m not your personal therapist. Now, what’s your problem? Make it quick!"})}\n\n"
             else:
                 logging.warning("No response from API")
                 error_response = "Sorry, I couldn't generate a response. Please try again."

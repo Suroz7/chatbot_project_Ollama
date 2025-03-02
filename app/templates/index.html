@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Assistant</title>
+    <title>Mimesis</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
     <meta name="theme-color" content="#4f46e5">
@@ -11,7 +11,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>AI Assistant</h1>
+            <h1>Mimesis</h1>
             <button id="dark-toggle" aria-label="Toggle dark mode">🌙</button>
         </header>
         <div id="chat-box"></div>
@@ -182,7 +182,7 @@
                             document.getElementById('chat-box').innerHTML = '';
                             
                             // Add welcome message
-                            const welcomeMsg = createMessage('AI', 'Hello! How can I help you today?');
+                           
                             document.getElementById('chat-box').appendChild(welcomeMsg);
                         }
                     })
@@ -212,7 +212,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             const chatBox = document.getElementById('chat-box');
             if (chatBox.childElementCount === 0) {
-                const welcomeMsg = createMessage('AI', 'Hello! How can I help you today?');
+                const welcomeMsg = createMessage('AI', "Wubba lubba dub dub! Alright, Morty, Grandpa's here for you, but don’t get too cozy, though. I’m not your personal therapist. Now, what’s your problem? Make it quick!");
                 chatBox.appendChild(welcomeMsg);
             }
         });
