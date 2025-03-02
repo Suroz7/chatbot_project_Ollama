@@ -15,10 +15,10 @@ logging.basicConfig(
 )
 
 # Ollama configuration with external endpoint
-OLLAMA_API = 'https://joly.work.gd/api/generate'
-OLLAMA_MODEL = "deepseek-r1:1.5b"
-logging.info(f"Ollama endpoint set to: {OLLAMA_API}")
-logging.info(f"Ollama model set to: {OLLAMA_MODEL}")
+OLLAMA_API = 'https://joly.work.gd'
+MODEL_NAME = "deepseek-r1:1.5b"
+logging.info(f"API endpoint set to: {OLLAMA_API}")
+logging.info(f"Model set to: {MODEL_NAME}")
 
 # Google Custom Search API credentials
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', "AIzaSyCMRicu4UnrCmn-8rr29GUqpB_NUzf-k3c")
@@ -73,7 +73,7 @@ def web_search(query, num_results=3):
         logging.error(f"Google API search failed: {e}")
         return {"error": str(e)}
 
-# Chat streaming endpoint with direct Ollama API calls
+# Chat streaming endpoint with direct API calls
 @app.route('/api/chat/stream')
 def chat_stream():
     prompt = request.args.get('prompt', '')
@@ -99,32 +99,27 @@ def chat_stream():
             for entry in conversation_context
         ) if conversation_context else "No prior conversation."
 
-        # System prompt with history as reference
-        system_prompt = (
-            f"You are a helpful AI assistant with a memory of conversation history with user who is very good at having an engaging conversation. "
-            f"Below is the conversation history for reference only—DO NOT answer questions or engage in conversation from the threads unless explicitly asked. "
-            f"Conversation History : {history_text} ( use for reference to answer):\n\n\n"
-            f"Focus solely on the current user prompt{prompt} and answer it. Use web results if provided.\n\n"
+        # Create full prompt with system instructions, history and current question
+        full_prompt = (
+            f"You are a helpful AI assistant with a memory of conversation history with the user. "
+            f"Below is the conversation history for reference:\n\n{history_text}\n\n"
+            f"User's current question: {prompt}\n\n"
+            f"{web_info if web_info else ''}"
+            f"Please provide a helpful response."
         )
-
-        # Current prompt with web info
-        full_prompt = f"Answer this: {prompt}{web_info}"
-
-        # Use direct API call instead of ollama client
-        api_url = f"{OLLAMA_API}/api/chat"
+        
+        # Direct API call to /api/generate endpoint
+        api_url = f"{OLLAMA_API}/api/generate"
         
         payload = {
-            "model": OLLAMA_MODEL,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_prompt}
-            ],
+            "model": MODEL_NAME,
+            "prompt": full_prompt,
             "stream": True,
-            "options": {"context_window": 4096}
+            "context_window": 4096
         }
 
         try:
-            logging.info(f"Sending chat request to Ollama API at {OLLAMA_API}")
+            logging.info(f"Sending generate request to API at {api_url}")
             response = requests.post(api_url, json=payload, stream=True)
             response.raise_for_status()
             
@@ -133,13 +128,13 @@ def chat_stream():
                 if line:
                     try:
                         chunk_data = json.loads(line)
-                        if "message" in chunk_data and "content" in chunk_data["message"]:
-                            content = chunk_data["message"]["content"]
-                            if content:
-                                full_response += content
-                                yield f"data: {json.dumps({'chunk': content, 'web_used': bool(web_data)})}\n\n"
+                        # Extract response from the generate API format
+                        chunk = chunk_data.get('response', '')
+                        if chunk:
+                            full_response += chunk
+                            yield f"data: {json.dumps({'chunk': chunk, 'web_used': bool(web_data)})}\n\n"
                     except json.JSONDecodeError as e:
-                        logging.error(f"Failed to parse Ollama response: {e}")
+                        logging.error(f"Failed to parse API response: {e}")
             
             if full_response:
                 conversation_context.append({"role": "user", "content": prompt})
@@ -147,10 +142,10 @@ def chat_stream():
             elif not prompt.strip():
                 yield f"data: {json.dumps({'chunk': 'Hey there! How can I help you today?'})}\n\n"
             else:
-                logging.warning("No response from Ollama")
+                logging.warning("No response from API")
                 yield f"data: {json.dumps({'chunk': 'Sorry, I couldn\'t generate a response. Please try again.'})}\n\n"
         except Exception as e:
-            logging.error(f"Ollama API error: {e}")
+            logging.error(f"API error: {e}")
             yield f"data: {json.dumps({'error': f'Error: {e}'})}\n\n"
 
     return Response(stream_with_context(generate(prompt)), mimetype='text/event-stream')

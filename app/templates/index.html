@@ -44,6 +44,9 @@
     </div>
 
     <script>
+        // Define API base URL - change this to your external API if needed
+        const API_BASE_URL = 'https://joly.work.gd';
+        
         // Check for saved theme preference or use system preference
         document.addEventListener('DOMContentLoaded', function() {
             const darkMode = localStorage.getItem('darkMode') === 'true' || 
@@ -102,7 +105,10 @@
             promptInput.focus();
             
             try {
-                const eventSource = new EventSource(`/api/chat/stream?prompt=${encodeURIComponent(prompt)}`);
+                // Use the correct API endpoint URL for streaming
+                const streamUrl = `/api/chat/stream?prompt=${encodeURIComponent(prompt)}`;
+                
+                const eventSource = new EventSource(streamUrl);
                 let fullResponse = '';
                 let aiMsg = null;
                 
@@ -134,10 +140,18 @@
                 };
                 
                 eventSource.onerror = function() {
+                    console.error("EventSource failed");
                     // Clean up typing indicator if still present
                     if (typingIndicator.parentNode) {
                         chatBox.removeChild(typingIndicator);
                     }
+                    
+                    // If we didn't get any response, show an error message
+                    if (!fullResponse) {
+                        const errorMsg = createMessage('AI', 'Sorry, there was an error connecting to the chat service. Please try again later.');
+                        chatBox.appendChild(errorMsg);
+                    }
+                    
                     eventSource.close();
                 };
                 
