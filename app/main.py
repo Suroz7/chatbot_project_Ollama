@@ -3,7 +3,7 @@ import datetime
 import os
 import logging
 import json
-import ollama
+import requests  # Use requests instead of ollama client
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -14,8 +14,10 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-# Ollama configuration
+# Ollama configuration with external endpoint
+OLLAMA_API = 'https://joly.work.gd/api/generate'
 OLLAMA_MODEL = "deepseek-r1:1.5b"
+logging.info(f"Ollama endpoint set to: {OLLAMA_API}")
 logging.info(f"Ollama model set to: {OLLAMA_MODEL}")
 
 # Google Custom Search API credentials
@@ -49,7 +51,6 @@ def should_search_web(prompt):
 # Perform Google API search
 def web_search(query, num_results=3):
     try:
-        import requests
         url = "https://www.googleapis.com/customsearch/v1"
         params = {
             "key": GOOGLE_API_KEY,
@@ -72,7 +73,7 @@ def web_search(query, num_results=3):
         logging.error(f"Google API search failed: {e}")
         return {"error": str(e)}
 
-# Chat streaming endpoint with Ollama
+# Chat streaming endpoint with direct Ollama API calls
 @app.route('/api/chat/stream')
 def chat_stream():
     prompt = request.args.get('prompt', '')
@@ -100,45 +101,56 @@ def chat_stream():
 
         # System prompt with history as reference
         system_prompt = (
-            f"You are a helpful AI assistant who is very good at having an engaging conversation. "
-            f"Below is the conversation history for reference only—DO NOT answer questions from it unless explicitly asked. "
-            f"Focus solely on the current user prompt and answer it directly. Use web results if provided.\n\n"
-            f"Conversation History (reference only):\n{history_text}\n\n"
+            f"You are a helpful AI assistant with a memory of conversation history with user who is very good at having an engaging conversation. "
+            f"Below is the conversation history for reference only—DO NOT answer questions or engage in conversation from the threads unless explicitly asked. "
+            f"Conversation History : {history_text} ( use for reference to answer):\n\n\n"
+            f"Focus solely on the current user prompt{prompt} and answer it. Use web results if provided.\n\n"
         )
 
         # Current prompt with web info
-        full_prompt = f"{prompt}{web_info}"
+        full_prompt = f"Answer this: {prompt}{web_info}"
 
-        # Prepare messages—system prompt with history, then current user prompt
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Answer this: {full_prompt}"}
-        ]
+        # Use direct API call instead of ollama client
+        api_url = f"{OLLAMA_API}/api/chat"
+        
+        payload = {
+            "model": OLLAMA_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": full_prompt}
+            ],
+            "stream": True,
+            "options": {"context_window": 4096}
+        }
 
         try:
-            stream = ollama.chat(
-                model=OLLAMA_MODEL,
-                messages=messages,
-                stream=True,
-                options={"context_window": 4096}
-            )
+            logging.info(f"Sending chat request to Ollama API at {OLLAMA_API}")
+            response = requests.post(api_url, json=payload, stream=True)
+            response.raise_for_status()
+            
             full_response = ""
-            for chunk in stream:
-                content = chunk['message']['content']
-                if content:
-                    full_response += content
-                    yield f"data: {json.dumps({'chunk': content, 'web_used': bool(web_data)})}\n\n"
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        chunk_data = json.loads(line)
+                        if "message" in chunk_data and "content" in chunk_data["message"]:
+                            content = chunk_data["message"]["content"]
+                            if content:
+                                full_response += content
+                                yield f"data: {json.dumps({'chunk': content, 'web_used': bool(web_data)})}\n\n"
+                    except json.JSONDecodeError as e:
+                        logging.error(f"Failed to parse Ollama response: {e}")
             
             if full_response:
                 conversation_context.append({"role": "user", "content": prompt})
                 conversation_context.append({"role": "assistant", "content": full_response})
             elif not prompt.strip():
-                yield f"data: {json.dumps({'chunk': 'Hey bro, what\'s up?'})}\n\n"
+                yield f"data: {json.dumps({'chunk': 'Hey there! How can I help you today?'})}\n\n"
             else:
                 logging.warning("No response from Ollama")
-                yield f"data: {json.dumps({'chunk': 'Nothing came back, bro. Try again?'})}\n\n"
+                yield f"data: {json.dumps({'chunk': 'Sorry, I couldn\'t generate a response. Please try again.'})}\n\n"
         except Exception as e:
-            logging.error(f"Ollama error: {e}")
+            logging.error(f"Ollama API error: {e}")
             yield f"data: {json.dumps({'error': f'Error: {e}'})}\n\n"
 
     return Response(stream_with_context(generate(prompt)), mimetype='text/event-stream')
@@ -170,6 +182,6 @@ def download_chat():
     return response
 
 if __name__ == '__main__':
-    debug_mode = os.environ.get('FLASK_DEBUG', 'False') == 'True'
+    debug_mode = os.environ.get('FLASK_DEBUG', 'True') == 'True'
     logging.info(f"Starting Flask app (debug: {debug_mode})")
     app.run(host='0.0.0.0', port=5000, debug=debug_mode)

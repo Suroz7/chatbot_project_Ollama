@@ -419,7 +419,7 @@ think {
     background-color: #444;
 }
 
-think{
+br{
     font-size: 70%;
     background-color: #e9e1e1;
     display: flex;
@@ -427,4 +427,5 @@ think{
     margin: 5px;
     border-radius: 10px;
     color: black;
+    
 }
