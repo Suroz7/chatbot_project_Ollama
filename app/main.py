@@ -143,7 +143,7 @@ def chat_stream():
                 yield f"data: {json.dumps({'chunk': 'Hey there! How can I help you today?'})}\n\n"
             else:
                 logging.warning("No response from API")
-                yield f"data: {json.dumps({'chunk': 'Sorry, I couldn\'t generate a response. Please try again.'})}\n\n"
+                yield f"data: {json.dumps({'chunk': 'Sorry, I couldn\\'t generate a response. Please try again.'})}\n\n"
         except Exception as e:
             logging.error(f"API error: {e}")
             yield f"data: {json.dumps({'error': f'Error: {e}'})}\n\n"
