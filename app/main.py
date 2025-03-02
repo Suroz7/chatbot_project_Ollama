@@ -89,9 +89,11 @@ def chat_stream():
             web_data = web_search(prompt)
             if "combined_snippets" in web_data:
                 web_info = f"\n\n{web_data['search_engine']} search results:\n{web_data['combined_snippets']}\n\n"
-                yield f"data: {json.dumps({'chunk': f'Using {web_data['search_engine']} search results...\n\n'})}\n\n"
+                search_message = f'Using {web_data["search_engine"]} search results...\n\n'
+                yield f"data: {json.dumps({'chunk': search_message})}\n\n"
             elif "error" in web_data:
-                yield f"data: {json.dumps({'chunk': f'Web search failed: {web_data['error']}\n\n'})}\n\n"
+                error_message = f'Web search failed: {web_data["error"]}\n\n'
+                yield f"data: {json.dumps({'chunk': error_message})}\n\n"
 
         # Build conversation history as a reference string
         history_text = "".join(
@@ -143,10 +145,12 @@ def chat_stream():
                 yield f"data: {json.dumps({'chunk': 'Hey there! How can I help you today?'})}\n\n"
             else:
                 logging.warning("No response from API")
-                yield f"data: {json.dumps({'chunk': 'Sorry, I couldn\\'t generate a response. Please try again.'})}\n\n"
+                error_response = "Sorry, I couldn't generate a response. Please try again."
+                yield f"data: {json.dumps({'chunk': error_response})}\n\n"
         except Exception as e:
             logging.error(f"API error: {e}")
-            yield f"data: {json.dumps({'error': f'Error: {e}'})}\n\n"
+            error_message = f"Error: {e}"
+            yield f"data: {json.dumps({'error': error_message})}\n\n"
 
     return Response(stream_with_context(generate(prompt)), mimetype='text/event-stream')
 
